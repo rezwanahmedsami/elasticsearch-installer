@@ -1,0 +1,303 @@
+from ast import If
+import os
+import time
+
+REPO_FILE_NAME = "/etc/yum.repos.d/elasticsearch.repo"
+REPO_CONTENT = """
+[Elasticsearch-7]
+name=Elasticsearch repository for 7.x packages
+baseurl=https://artifacts.elastic.co/packages/7.x/yum
+gpgcheck=1
+gpgkey=https://artifacts.elastic.co/GPG-KEY-elasticsearch
+enabled=1
+autorefresh=1
+type=rpm-md
+"""
+ELASTICSEARCH_YML_CONFIG_FILE = "/etc/elasticsearch/elasticsearch.yml"
+JVM_OPTIONS_CONFIG_FILE = "/etc/elasticsearch/jvm.options"
+
+CLUSTER_NAME = "my-application"
+NETWORK_HOST = "127.0.0.1"
+NETWORK_PORT = "9200"
+
+
+
+class tools:
+
+    def execute(self, cmd):
+        os.system(cmd)
+
+    def writeFile(self, filename, content):
+        f = open(filename, "w")
+        f.write(content)
+        f.close()
+        return True
+
+    def removeFile(self, filename):
+        os.remove(filename)
+        return 1
+
+
+class operations(tools):
+    
+    def configure_elasticsearch_yml(self):
+        global CLUSTER_NAME
+        global NETWORK_HOST
+        global NETWORK_PORT
+        
+        template = f"""
+# ======================== Elasticsearch Configuration =========================
+#
+# NOTE: Elasticsearch comes with reasonable defaults for most settings.
+#       Before you set out to tweak and tune the configuration, make sure you
+#       understand what are you trying to accomplish and the consequences.
+#
+# The primary way of configuring a node is via this file. This template lists
+# the most important settings you may want to configure for a production cluster.
+#
+# Please consult the documentation for further information on configuration options:
+# https://www.elastic.co/guide/en/elasticsearch/reference/index.html
+#
+# ---------------------------------- Cluster -----------------------------------
+#
+# Use a descriptive name for your cluster:
+#
+cluster.name: {CLUSTER_NAME}
+#
+# ------------------------------------ Node ------------------------------------
+#
+# Use a descriptive name for the node:
+#
+node.name: node-1
+#
+# Add custom attributes to the node:
+#
+#node.attr.rack: r1
+#
+# ----------------------------------- Paths ------------------------------------
+#
+# Path to directory where to store the data (separate multiple locations by comma):
+#
+path.data: /var/lib/elasticsearch
+#
+# Path to log files:
+#
+path.logs: /var/log/elasticsearch
+#
+# ----------------------------------- Memory -----------------------------------
+#
+# Lock the memory on startup:
+#
+#bootstrap.memory_lock: true
+#
+# Make sure that the heap size is set to about half the memory available
+# on the system and that the owner of the process is allowed to use this
+# limit.
+#
+# Elasticsearch performs poorly when the system is swapping the memory.
+#
+# ---------------------------------- Network -----------------------------------
+#
+# By default Elasticsearch is only accessible on localhost. Set a different
+# address here to expose this node on the network:
+#
+network.host: {NETWORK_HOST}
+#
+# By default Elasticsearch listens for HTTP traffic on the first free port it
+# finds starting at 9200. Set a specific HTTP port here:
+#
+http.port: {NETWORK_PORT}
+#
+# For more information, consult the network module documentation.
+#
+# --------------------------------- Discovery ----------------------------------
+#
+# Pass an initial list of hosts to perform discovery when this node is started:
+# The default list of hosts is ["127.0.0.1", "[::1]"]
+#
+#discovery.seed_hosts: ["host1", "host2"]
+discovery.seed_hosts: []
+#
+# Bootstrap the cluster using an initial set of master-eligible nodes:
+#
+#cluster.initial_master_nodes: ["node-1", "node-2"]
+#
+# For more information, consult the discovery and cluster formation module documentation.
+#
+# ---------------------------------- Various -----------------------------------
+#
+# Require explicit names when deleting indices:
+#
+#action.destructive_requires_name: true
+#
+# ---------------------------------- Security ----------------------------------
+#
+#                                 *** WARNING ***
+#
+# Elasticsearch security features are not enabled by default.
+# These features are free, but require configuration changes to enable them.
+# This means that users don’t have to provide credentials and can get full access
+# to the cluster. Network connections are also not encrypted.
+#
+# To protect your data, we strongly encourage you to enable the Elasticsearch security features. 
+# Refer to the following documentation for instructions.
+#
+# https://www.elastic.co/guide/en/elasticsearch/reference/7.16/configuring-stack-security.html
+
+        """
+        self.writeFile(ELASTICSEARCH_YML_CONFIG_FILE, template)
+        print("|> Configure success elasticsearch.yml")
+
+        template2 = """
+################################################################
+##
+## JVM configuration
+##
+################################################################
+##
+## WARNING: DO NOT EDIT THIS FILE. If you want to override the
+## JVM options in this file, or set any additional options, you
+## should create one or more files in the jvm.options.d
+## directory containing your adjustments.
+##
+## See https://www.elastic.co/guide/en/elasticsearch/reference/7.17/jvm-options.html
+## for more information.
+##
+################################################################
+
+
+
+################################################################
+## IMPORTANT: JVM heap size
+################################################################
+##
+## The heap size is automatically configured by Elasticsearch
+## based on the available memory in your system and the roles
+## each node is configured to fulfill. If specifying heap is
+## required, it should be done through a file in jvm.options.d,
+## and the min and max should be set to the same value. For
+## example, to set the heap to 4 GB, create a new file in the
+## jvm.options.d directory containing these lines:
+##
+## -Xms4g
+## -Xmx4g
+##
+## See https://www.elastic.co/guide/en/elasticsearch/reference/7.17/heap-size.html
+## for more information
+##
+################################################################
+
+
+################################################################
+## Expert settings
+################################################################
+##
+## All settings below here are considered expert settings. Do
+## not adjust them unless you understand what you are doing. Do
+## not edit them in this file; instead, create a new file in the
+## jvm.options.d directory containing your adjustments.
+##
+################################################################
+
+## GC configuration
+8-13:-XX:+UseConcMarkSweepGC
+8-13:-XX:CMSInitiatingOccupancyFraction=75
+8-13:-XX:+UseCMSInitiatingOccupancyOnly
+
+## G1GC Configuration
+# NOTE: G1 GC is only supported on JDK version 10 or later
+# to use G1GC, uncomment the next two lines and update the version on the
+# following three lines to your version of the JDK
+# 10-13:-XX:-UseConcMarkSweepGC
+# 10-13:-XX:-UseCMSInitiatingOccupancyOnly
+14-:-XX:+UseG1GC
+
+## JVM temporary directory
+#-Djava.io.tmpdir=${ES_TMPDIR}
+-Djava.io.tmpdir=/var/log/elasticsearch
+
+## heap dumps
+
+# generate a heap dump when an allocation from the Java heap fails; heap dumps
+# are created in the working directory of the JVM unless an alternative path is
+# specified
+-XX:+HeapDumpOnOutOfMemoryError
+
+# exit right after heap dump on out of memory error. Recommended to also use
+# on java 8 for supported versions (8u92+).
+9-:-XX:+ExitOnOutOfMemoryError
+
+# specify an alternative path for heap dumps; ensure the directory exists and
+# has sufficient space
+-XX:HeapDumpPath=/var/lib/elasticsearch
+
+# specify an alternative path for JVM fatal error logs
+-XX:ErrorFile=/var/log/elasticsearch/hs_err_pid%p.log
+
+## JDK 8 GC logging
+8:-XX:+PrintGCDetails
+8:-XX:+PrintGCDateStamps
+8:-XX:+PrintTenuringDistribution
+8:-XX:+PrintGCApplicationStoppedTime
+8:-Xloggc:/var/log/elasticsearch/gc.log
+8:-XX:+UseGCLogFileRotation
+8:-XX:NumberOfGCLogFiles=32
+8:-XX:GCLogFileSize=64m
+
+# JDK 9+ GC logging
+9-:-Xlog:gc*,gc+age=trace,safepoint:file=/var/log/elasticsearch/gc.log:utctime,pid,tags:filecount=32,filesize=64m
+
+        """
+        self.writeFile(JVM_OPTIONS_CONFIG_FILE, template2)
+        print("|> Configure success jvm.options")
+
+    def run_installer(self):
+        global CLUSTER_NAME
+        global NETWORK_HOST
+        global NETWORK_PORT
+        print("Running Elastic search Installer.....")
+        time.sleep(2)
+        cluster_name = str(input(" Cluster Name (default: my-application)>> "))
+        net_host = str(input(" Network Host (default: 127.0.0.1)>> "))
+        net_port = str(input(" Network Port (default: 9200)>> "))
+        if cluster_name != "":
+            CLUSTER_NAME = cluster_name
+        
+
+        if net_host != "":
+            NETWORK_HOST = net_host
+        
+
+        if net_port != "":
+            NETWORK_PORT = net_port
+
+        self.execute(f"sudo rpm --import https://artifacts.elastic.co/GPG-KEY-elasticsearch")
+        print("|> GPG KEY Import success..")
+        print("|> Adding elasticsearch repo on yum")
+        self.writeFile(REPO_FILE_NAME, REPO_CONTENT)
+        print("|> Success fully repo added")
+        print("|> Installing Elasticsearch...")
+        self.execute(f"sudo yum install elasticsearch")
+        print("|> Successfully Installed elastic search.")
+        print("|> Configuring elastic search....")
+        self.configure_elasticsearch_yml()
+        print("|> Enabling elastic search....")
+        self.execute(f"sudo systemctl daemon-reload")
+        self.execute(f"sudo systemctl enable elasticsearch")
+        print("|> Enable success elastic search....")
+        print("|> Starting elastic search....")
+        self.execute(f"sudo systemctl start elasticsearch")
+        print("|> Checking elastic search....")
+        self.execute(f"curl -X GET '{NETWORK_HOST}:{NETWORK_PORT}/?pretty'")
+        print("")
+        print("")
+        print("Everything success done")
+
+
+
+
+if __name__ == "__main__":
+    elasticsearch = operations()
+    elasticsearch.run_installer()
+
+
